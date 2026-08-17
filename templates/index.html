@@ -8,6 +8,14 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
+  <!-- Shown only when the server is dev.py, which serves /dev-mode. server.py
+       has no such route, so this stays hidden wherever real agents report. -->
+  <p class="demo-banner" id="demo-banner" role="status" hidden>
+    <strong>Demo data.</strong>
+    These pressure values are simulated by <code>dev.py</code> for local
+    preview. They are not measurements of any real machine.
+  </p>
+
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>

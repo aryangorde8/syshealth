@@ -1439,9 +1439,27 @@
     });
   }
 
+  // dev.py serves /dev-mode; server.py does not. A 404 leaves the banner
+  // hidden, which is the production case.
+  function checkDemoMode() {
+    fetch('dev-mode', { headers: { Accept: 'application/json' } })
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        if (data && data.demo) {
+          $('#demo-banner').hidden = false;
+        }
+      })
+      .catch(function () {
+        /* No dev-mode route means a real server. Nothing to show. */
+      });
+  }
+
   function init() {
     wireTheme();
     wireStress();
+    checkDemoMode();
 
     wireSegmented('#range-control', function (button) {
       state.rangeMinutes = parseInt(button.getAttribute('data-minutes'), 10) || 0;

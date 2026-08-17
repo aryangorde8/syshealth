@@ -1,0 +1,15 @@
+{
+  "name": "syshealth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Memory-pressure monitoring across AWS instance sizes. The project is Python; this file exists only so the dashboard can be previewed with the usual `npm run dev`.",
+  "scripts": {
+    "dev": "python3 dev.py",
+    "start": "python3 server.py",
+    "agent": "python3 syshealth.py",
+    "calibrate": "python3 syshealth.py calibrate"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

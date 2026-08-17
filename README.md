@@ -29,7 +29,12 @@ Open `http://YOUR_SERVER_IP:5000` in your browser.
 - Live cards per instance — green dot (online) / grey dot (offline)
 - Health badge: HEALTHY / DEGRADED / CRITICAL
 - PSI, Avg PSI, pgscan/pgsteal deltas, last-seen timestamp
-- Chart.js time-series PSI chart per instance (auto-updates every 3s)
+- Memory-pressure graph over time, auto-updating, with the analyser's rolling
+  average and its 2×/5× baseline thresholds drawn in
+- **Instance** toggle — one machine on its own, or every size overlaid to
+  compare. Colour encodes instance size on a single light-to-dark ramp, so a
+  line's shade tells you how big the box is
+- **Range** toggle — 5m / 15m / 1h / All — and a table view of the same samples
 - **⚡ Stress All** button — fires simultaneous memory stress tests on all online instances
 
 ---
@@ -49,7 +54,52 @@ Same stress test (`stress --vm 2 --vm-bytes 800M --vm-keep`) run on all four ins
 
 ---
 
-## Quick Start
+## Preview it locally
+
+The dashboard only says anything once several differently-sized machines are
+pushing, so there is a demo mode that simulates a four-size fleet — no AWS, no
+agents, nothing to configure:
+
+```bash
+npm run dev          # or: python3 dev.py
+```
+
+Then open <http://127.0.0.1:5000>. You get `t3.micro` through `t3.large` under a
+repeating load cycle, the **Instance** toggle to compare them, and a **Stress
+all** button that starts a simulated load episode.
+
+The pressure values are synthetic and every page says so in a banner. Only the
+sensor is faked: each simulated machine is driven through the real `Analyzer`,
+so the states, the reasons and the 2×/5× threshold lines come out of the same
+code that runs in production.
+
+`npm` is used only as a familiar entry point — the project is Python, and
+`package.json` has no dependencies to install.
+
+---
+
+## Provision the real thing
+
+There is Terraform for the dashboard plus one instance of each size. Two
+variables to set, one command to run:
+
+```bash
+cd terraform
+cat > terraform.tfvars <<EOF
+key_name = "your-keypair"
+ssh_cidr = "$(curl -s ifconfig.me)/32"
+EOF
+
+terraform init && terraform apply
+```
+
+Everything installs and starts itself; open the `dashboard_url` output. See
+[`terraform/README.md`](terraform/README.md) for costs, design notes and
+`terraform destroy`.
+
+---
+
+## Quick Start (manual)
 
 ### 1. Launch EC2 instances (AWS CLI)
 
@@ -181,10 +231,16 @@ syshealth/
 ├── syshealth.py       # Agent: collector, analyzer, control server, push client
 ├── analyzer.py        # Sliding-window PSI classifier (HEALTHY/DEGRADED/CRITICAL)
 ├── collector.py       # Reads /proc/pressure/memory and /proc/vmstat
+├── instance.py        # Instance type/id via IMDSv2, so sizes can be compared
 ├── reporter.py        # Local stdout logging
+├── dev.py             # Local preview: simulated four-size fleet (npm run dev)
 ├── deploy.sh          # One-command deploy to all EC2 instances
-└── templates/
-    └── index.html     # Real-time dashboard (HTML + Chart.js)
+├── templates/
+│   └── index.html     # Dashboard markup
+├── static/
+│   ├── css/dashboard.css
+│   └── js/dashboard.js   # Pressure graph, drawn as inline SVG — no libraries
+└── terraform/         # Dashboard + one instance per size, in one apply
 ```
 
 ---
@@ -195,9 +251,14 @@ syshealth/
 - `pip install flask requests`
 - Linux kernel ≥ 4.20 (PSI support)
 - `stress` package on agent instances (`sudo apt install stress`)
+- Node ≥ 18 only if you want `npm run dev` — `python3 dev.py` is the same thing
+- Terraform ≥ 1.3 only if you use `terraform/`
 
 ---
 
 ## Tech Stack
 
-Python · Flask · Chart.js · Linux PSI · vmstat · AWS EC2 · AWS CLI · Bash
+Python · Flask · Linux PSI · vmstat · AWS EC2 · Terraform · Bash
+
+The graph is hand-written inline SVG with no charting library and no build step,
+so the dashboard loads with nothing fetched from a CDN.
