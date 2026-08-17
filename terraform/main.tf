@@ -158,6 +158,11 @@ resource "aws_instance" "server" {
   vpc_security_group_ids = [aws_security_group.server.id]
   key_name               = var.key_name
 
+  # Stated rather than inherited from the subnet's map_public_ip_on_launch.
+  # Accounts do turn that off, and then there is no address to open the
+  # dashboard on and no route out to install anything.
+  associate_public_ip_address = true
+
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/server_user_data.sh.tftpl", {
     repo_url    = var.repo_url
@@ -189,6 +194,10 @@ resource "aws_instance" "agent" {
   subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.agent.id]
   key_name               = var.key_name
+
+  # As above: the agents need a route out to clone the repo and install
+  # packages, and an address you can SSH to when one of them misbehaves.
+  associate_public_ip_address = true
 
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
