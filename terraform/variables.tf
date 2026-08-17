@@ -38,9 +38,9 @@ variable "repo_url" {
 }
 
 variable "repo_branch" {
-  description = "Branch to check out on each instance."
+  description = "Branch to check out on each instance. Point this at main once the dashboard is merged there; until then the default is the branch carrying it."
   type        = string
-  default     = "claude/syshealth-pressure-graph-btz8hm"
+  default     = "feat/pressure-graph"
 }
 
 variable "swap_mb" {
