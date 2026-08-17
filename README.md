@@ -117,17 +117,20 @@ Everything installs and starts itself; open the `dashboard_url` output. See
 ### 1. Launch EC2 instances (AWS CLI)
 
 ```bash
+# Key pairs and security groups are both per region, so set this once.
+REGION=ap-south-1
+
 # Create key pair
-aws ec2 create-key-pair --region eu-north-1 --key-name syshealth-key \
+aws ec2 create-key-pair --region $REGION --key-name syshealth-key \
   --query "KeyMaterial" --output text > syshealth-key.pem
 chmod 400 syshealth-key.pem
 
 # Create security group (ports 22, 5000, 5001)
-SG_ID=$(aws ec2 create-security-group --region eu-north-1 \
+SG_ID=$(aws ec2 create-security-group --region $REGION \
   --group-name syshealth-sg --description "SysHealth" \
   --query "GroupId" --output text)
 
-aws ec2 authorize-security-group-ingress --region eu-north-1 \
+aws ec2 authorize-security-group-ingress --region $REGION \
   --group-id $SG_ID --ip-permissions \
   "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=0.0.0.0/0}]" \
   "IpProtocol=tcp,FromPort=5000,ToPort=5000,IpRanges=[{CidrIp=0.0.0.0/0}]" \

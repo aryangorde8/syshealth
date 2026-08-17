@@ -52,6 +52,13 @@ data "aws_subnets" "default" {
   }
 }
 
+# Key pairs are per region, so changing region without creating one there is an
+# easy mistake. Looking it up fails at plan time with "no matching EC2 Key Pair
+# found" instead of part way through apply, once instances already exist.
+data "aws_key_pair" "ssh" {
+  key_name = var.key_name
+}
+
 # Ubuntu, because PSI is compiled in and enabled by default. On Amazon Linux
 # /proc/pressure/memory may be absent unless you boot with psi=1, and the
 # collector silently reports 0.0 when the file is missing — a dashboard full of
@@ -171,7 +178,7 @@ resource "aws_instance" "server" {
   instance_type          = var.server_instance_type
   subnet_id              = local.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.server.id]
-  key_name               = var.key_name
+  key_name               = data.aws_key_pair.ssh.key_name
 
   # Stated rather than inherited from the subnet's map_public_ip_on_launch.
   # Accounts do turn that off, and then there is no address to open the
@@ -220,7 +227,7 @@ resource "aws_instance" "agent" {
   # transfer.
   subnet_id              = local.subnet_ids[each.value.index % length(local.subnet_ids)]
   vpc_security_group_ids = [aws_security_group.agent.id]
-  key_name               = var.key_name
+  key_name               = data.aws_key_pair.ssh.key_name
 
   # As above: the agents need a route out to clone the repo and install
   # packages, and an address you can SSH to when one of them misbehaves.

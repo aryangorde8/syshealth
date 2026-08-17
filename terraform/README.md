@@ -4,9 +4,14 @@ One `terraform apply` brings up the whole thing: a dashboard server and
 `t3.micro`, `t3.small`, `t3.medium`, `t3.large`, each running the same agent and
 reporting in. Nothing to configure on the instances by hand.
 
+Defaults to `ap-south-1` (Mumbai). Override with `region` in `terraform.tfvars`,
+remembering that a key pair only exists in the region it was created in.
+
 ## What you need
 
-- An EC2 key pair in the target region.
+- An EC2 key pair **in the target region**. Key pairs are per region, so a name
+  that works in one is absent in another; the config looks yours up and fails at
+  `plan` if it is missing, rather than part way through `apply`.
 - AWS credentials with EC2 permissions (`AmazonEC2FullAccess` covers it).
   Terraform reads them the usual ways — `AWS_PROFILE`, env vars, or
   `~/.aws/credentials`.
@@ -114,6 +119,30 @@ instances, or connecting from somewhere with IPv4.
 Your address also changes when your network does, at which point the dashboard
 stops loading. Rewrite `terraform.tfvars` and `apply` again; only the security
 group rules change, and the instances are left alone.
+
+**`InsufficientInstanceCapacity`** — AWS has no capacity for that instance type
+in that availability zone right now. Nothing in this config causes it and
+retrying the same zone will not help. The error is retryable, so left to itself
+an `apply` hangs at "Still creating…" rather than failing; `create_timeout`
+bounds that.
+
+Instances are already spread across the default VPC's subnets, so one short zone
+does not stop the fleet. If a whole region is short, move:
+
+```bash
+terraform apply -var='region=eu-west-1'    # create a key pair there first
+```
+
+To check a region has room before spending an `apply` on it, launch one
+throwaway instance and terminate it:
+
+```bash
+aws ec2 run-instances --region <region> --instance-type t3.micro --count 1 \
+  --image-id $(aws ec2 describe-images --region <region> --owners 099720109477 \
+    --filters 'Name=name,Values=ubuntu/images/hvm-ssd*/ubuntu-noble-24.04-amd64-server-*' \
+    --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text) \
+  --query 'Instances[].InstanceId' --output text
+```
 
 An instance that never appears:
 

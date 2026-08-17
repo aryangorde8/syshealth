@@ -1,7 +1,12 @@
 variable "region" {
-  description = "AWS region to launch into."
+  description = <<-EOT
+    AWS region to launch into. Note that key pairs are per region — the name in
+    key_name must exist in this one. Larger regions run short of a given instance
+    type less often; ap-south-1, eu-west-1 and eu-central-1 are all considerably
+    bigger than eu-north-1.
+  EOT
   type        = string
-  default     = "eu-north-1"
+  default     = "ap-south-1"
 }
 
 variable "instance_types" {
