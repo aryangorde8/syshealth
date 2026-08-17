@@ -184,6 +184,13 @@ resource "aws_instance" "server" {
     Name = "${var.name_prefix}-dashboard"
     Role = "dashboard"
   })
+
+  # A launch that cannot reach the EC2 API otherwise sits at "Still creating..."
+  # indefinitely, printing progress that means nothing. Bound it, so a call that
+  # is not landing says so instead of looking like a slow instance.
+  timeouts {
+    create = var.create_timeout
+  }
 }
 
 resource "aws_instance" "agent" {
@@ -230,4 +237,8 @@ resource "aws_instance" "agent" {
     InstanceSize = each.value
     Role         = "agent"
   })
+
+  timeouts {
+    create = var.create_timeout
+  }
 }

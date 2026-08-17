@@ -89,6 +89,18 @@ variable "calibrate" {
   default     = true
 }
 
+variable "create_timeout" {
+  description = <<-EOT
+    How long to wait for an instance to reach "running" before failing. An
+    instance normally gets there in well under a minute; anything approaching
+    this bound means the EC2 API call is not getting through, not that AWS is
+    being slow. Raise it if you are on a connection you know to be slow but
+    working.
+  EOT
+  type        = string
+  default     = "8m"
+}
+
 variable "name_prefix" {
   description = "Prefix for instance and security group names."
   type        = string
