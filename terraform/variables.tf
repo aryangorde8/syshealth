@@ -89,6 +89,18 @@ variable "calibrate" {
   default     = true
 }
 
+variable "subnet_id" {
+  description = <<-EOT
+    Pin every instance to one subnet. Leave null to spread across the default
+    VPC's subnets, which is what you want: EC2 capacity is per availability zone
+    per instance type, so one zone short of t3 should not stop the whole fleet.
+    Set this only when you have found a zone that does have capacity and want
+    everything there.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "create_timeout" {
   description = <<-EOT
     How long to wait for an instance to reach "running" before failing. An

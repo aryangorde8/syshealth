@@ -12,6 +12,7 @@ output "instances" {
         hostname   = aws_instance.server.private_dns
         public_ip  = aws_instance.server.public_ip
         private_ip = aws_instance.server.private_ip
+        zone       = aws_instance.server.availability_zone
       }
     },
     {
@@ -20,6 +21,8 @@ output "instances" {
         hostname   = inst.private_dns
         public_ip  = inst.public_ip
         private_ip = inst.private_ip
+        # Which zone a size landed in, so a capacity failure names a place.
+        zone = inst.availability_zone
       }
     }
   )

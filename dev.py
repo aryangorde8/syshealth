@@ -20,10 +20,28 @@ import threading
 import time
 from datetime import datetime
 
-from flask import jsonify
+try:
+    from flask import jsonify
 
-import server
-from analyzer import Analyzer
+    import server
+    from analyzer import Analyzer
+except ModuleNotFoundError as exc:
+    # Ubuntu refuses `pip install` into the system Python (PEP 668), so the
+    # obvious next move fails too. Say what does work instead of leaving a
+    # traceback and an "externally-managed-environment" error to connect.
+    if exc.name not in ("flask", "requests"):
+        raise
+    raise SystemExit(
+        "\n%s is not installed.\n\n"
+        "On Debian or Ubuntu, install the packaged versions:\n"
+        "    sudo apt install python3-flask python3-requests\n\n"
+        "Or keep them out of the system Python with a virtualenv:\n"
+        "    python3 -m venv .venv\n"
+        "    .venv/bin/pip install flask requests\n"
+        "    source .venv/bin/activate    # then: npm run dev\n\n"
+        "Plain `pip install flask` will fail with "
+        "\"externally-managed-environment\" on these systems.\n" % exc.name
+    )
 
 PORT = 5000
 TICK_SEC = 5.0          # what the real agent pushes at

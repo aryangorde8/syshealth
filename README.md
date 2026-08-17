@@ -61,7 +61,18 @@ pushing, so there is a demo mode that simulates a four-size fleet — no AWS, no
 agents, nothing to configure:
 
 ```bash
-npm run dev          # or: python3 dev.py
+sudo apt install python3-flask python3-requests    # first time only
+npm run dev                                        # or: python3 dev.py
+```
+
+On Debian and Ubuntu, `pip install flask` fails with
+`externally-managed-environment` — pip is not allowed to write to the system
+Python. Install the packaged versions as above, or keep them out of it entirely:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install flask requests
+source .venv/bin/activate      # then: npm run dev
 ```
 
 Then open <http://127.0.0.1:5000>. You get `t3.micro` through `t3.large` under a

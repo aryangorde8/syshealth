@@ -15,8 +15,23 @@ provider "aws" {
 
 locals {
   # Keyed by type so `terraform plan` reads as a list of sizes rather than
-  # index numbers, and adding a size never renumbers the others.
-  instances = { for t in var.instance_types : t => t }
+  # index numbers, and adding a size never renumbers the others. The index comes
+  # along so each instance can be given a different subnet.
+  instances = {
+    for idx, t in var.instance_types : t => {
+      type  = t
+      index = idx
+    }
+  }
+
+  # Capacity is per availability zone per instance type, so pinning everything to
+  # one subnet means a single zone running short of t3 blocks the whole fleet with
+  # InsufficientInstanceCapacity — and that error is retryable, so it presents as
+  # an apply that hangs rather than one that fails. Spreading across the default
+  # subnets asks a different zone each time.
+  subnet_ids = (
+    var.subnet_id != null ? [var.subnet_id] : data.aws_subnets.default.ids
+  )
 
   common_tags = merge(var.tags, {
     Project   = "syshealth"
@@ -154,7 +169,7 @@ resource "aws_vpc_security_group_egress_rule" "agent_all" {
 resource "aws_instance" "server" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.server_instance_type
-  subnet_id              = data.aws_subnets.default.ids[0]
+  subnet_id              = local.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.server.id]
   key_name               = var.key_name
 
@@ -196,9 +211,14 @@ resource "aws_instance" "server" {
 resource "aws_instance" "agent" {
   for_each = local.instances
 
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = each.value
-  subnet_id              = data.aws_subnets.default.ids[0]
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = each.value.type
+
+  # One zone per size, cycling if there are fewer subnets than sizes. Cross-zone
+  # traffic costs a fraction of a cent per GB and these pushes are a few hundred
+  # bytes every five seconds, so the capacity headroom is worth far more than the
+  # transfer.
+  subnet_id              = local.subnet_ids[each.value.index % length(local.subnet_ids)]
   vpc_security_group_ids = [aws_security_group.agent.id]
   key_name               = var.key_name
 
@@ -233,8 +253,8 @@ resource "aws_instance" "agent" {
   }
 
   tags = merge(local.common_tags, {
-    Name         = "${var.name_prefix}-${replace(each.value, ".", "-")}"
-    InstanceSize = each.value
+    Name         = "${var.name_prefix}-${replace(each.value.type, ".", "-")}"
+    InstanceSize = each.value.type
     Role         = "agent"
   })
 
