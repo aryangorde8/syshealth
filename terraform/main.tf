@@ -1,0 +1,224 @@
+terraform {
+  required_version = ">= 1.3"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.region
+}
+
+locals {
+  # Keyed by type so `terraform plan` reads as a list of sizes rather than
+  # index numbers, and adding a size never renumbers the others.
+  instances = { for t in var.instance_types : t => t }
+
+  common_tags = merge(var.tags, {
+    Project   = "syshealth"
+    ManagedBy = "terraform"
+  })
+}
+
+# The default VPC keeps this to one file with no NAT gateway to pay for. Server
+# and agents share it, so they reach each other over private addresses.
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+# Ubuntu, because PSI is compiled in and enabled by default. On Amazon Linux
+# /proc/pressure/memory may be absent unless you boot with psi=1, and the
+# collector silently reports 0.0 when the file is missing — a dashboard full of
+# zeroes with nothing to explain it.
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd*/ubuntu-noble-24.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Security groups. Referencing each other by id rather than by CIDR means the
+# addresses never have to be written down, and nothing is open wider than the
+# one peer that needs it.
+# ---------------------------------------------------------------------------
+
+resource "aws_security_group" "server" {
+  name        = "${var.name_prefix}-server"
+  description = "SysHealth dashboard: metrics in from agents, UI for the operator"
+  vpc_id      = data.aws_vpc.default.id
+
+  tags = merge(local.common_tags, { Name = "${var.name_prefix}-server" })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_security_group" "agent" {
+  name        = "${var.name_prefix}-agent"
+  description = "SysHealth agent: SSH for the operator, control port for the dashboard"
+  vpc_id      = data.aws_vpc.default.id
+
+  tags = merge(local.common_tags, { Name = "${var.name_prefix}-agent" })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "server_ssh" {
+  security_group_id = aws_security_group.server.id
+  description       = "SSH from the operator only"
+  cidr_ipv4         = var.ssh_cidr
+  from_port         = 22
+  to_port           = 22
+  ip_protocol       = "tcp"
+}
+
+# The dashboard has no authentication and its /run-stress endpoint can load
+# every agent, so the UI is reachable from one address only.
+resource "aws_vpc_security_group_ingress_rule" "server_ui" {
+  security_group_id = aws_security_group.server.id
+  description       = "Dashboard UI, operator only"
+  cidr_ipv4         = var.ssh_cidr
+  from_port         = 5000
+  to_port           = 5000
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "server_metrics" {
+  security_group_id            = aws_security_group.server.id
+  description                  = "Metrics pushed in by the agents"
+  referenced_security_group_id = aws_security_group.agent.id
+  from_port                    = 5000
+  to_port                      = 5000
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "server_all" {
+  security_group_id = aws_security_group.server.id
+  description       = "Outbound: reach agent control ports, install packages"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "agent_ssh" {
+  security_group_id = aws_security_group.agent.id
+  description       = "SSH from the operator only"
+  cidr_ipv4         = var.ssh_cidr
+  from_port         = 22
+  to_port           = 22
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "agent_control" {
+  security_group_id            = aws_security_group.agent.id
+  description                  = "Stress control port, reachable only from the dashboard"
+  referenced_security_group_id = aws_security_group.server.id
+  from_port                    = 5001
+  to_port                      = 5001
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "agent_all" {
+  security_group_id = aws_security_group.agent.id
+  description       = "Outbound: push metrics, install packages"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# ---------------------------------------------------------------------------
+# Instances
+# ---------------------------------------------------------------------------
+
+resource "aws_instance" "server" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.server_instance_type
+  subnet_id              = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids = [aws_security_group.server.id]
+  key_name               = var.key_name
+
+  user_data_replace_on_change = true
+  user_data = templatefile("${path.module}/server_user_data.sh.tftpl", {
+    repo_url    = var.repo_url
+    repo_branch = var.repo_branch
+  })
+
+  metadata_options {
+    http_tokens   = "required"
+    http_endpoint = "enabled"
+  }
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 8
+    encrypted   = true
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-dashboard"
+    Role = "dashboard"
+  })
+}
+
+resource "aws_instance" "agent" {
+  for_each = local.instances
+
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = each.value
+  subnet_id              = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids = [aws_security_group.agent.id]
+  key_name               = var.key_name
+
+  user_data_replace_on_change = true
+  user_data = templatefile("${path.module}/user_data.sh.tftpl", {
+    repo_url    = var.repo_url
+    repo_branch = var.repo_branch
+    # The server's private address: same VPC, so metrics never leave it and
+    # there is no public endpoint to write down or keep in sync.
+    dashboard_url = "http://${aws_instance.server.private_ip}:5000/metrics"
+    swap_mb       = var.swap_mb
+    calibrate     = var.calibrate
+  })
+
+  # instance.py reads the instance type over IMDSv2, so require it rather than
+  # leaving v1 open. No IAM role or credentials are involved: a machine can
+  # always read its own metadata.
+  metadata_options {
+    http_tokens                 = "required"
+    http_endpoint               = "enabled"
+    http_put_response_hop_limit = 1
+  }
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 8
+    encrypted   = true
+  }
+
+  tags = merge(local.common_tags, {
+    Name         = "${var.name_prefix}-${replace(each.value, ".", "-")}"
+    InstanceSize = each.value
+    Role         = "agent"
+  })
+}

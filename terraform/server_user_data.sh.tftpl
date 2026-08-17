@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Bootstraps the SysHealth dashboard server. Runs once, at first boot.
+set -euxo pipefail
+
+exec > >(tee -a /var/log/syshealth-bootstrap.log) 2>&1
+echo "=== syshealth dashboard bootstrap $(date -Is) ==="
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y --no-install-recommends git python3 python3-flask python3-requests
+
+git clone --depth 1 --branch '${repo_branch}' '${repo_url}' /opt/syshealth
+
+cat > /etc/systemd/system/syshealth-server.service <<'UNIT'
+[Unit]
+Description=SysHealth dashboard server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/syshealth
+ExecStart=/usr/bin/python3 /opt/syshealth/server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now syshealth-server
+
+# The store is in memory, so a restart loses history. Fail here rather than
+# leaving a dashboard that answers 200 with nothing in it.
+for i in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:5000/series >/dev/null 2>&1; then
+    echo "=== dashboard up on :5000, /series answering ==="
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "FATAL: dashboard did not come up" >&2
+journalctl -u syshealth-server -n 50 --no-pager
+exit 1

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Bootstraps one SysHealth agent. Runs once, at first boot.
+set -euxo pipefail
+
+exec > >(tee -a /var/log/syshealth-bootstrap.log) 2>&1
+echo "=== syshealth bootstrap $(date -Is) ==="
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y --no-install-recommends git python3 python3-requests stress
+
+# PSI is what the whole agent reads. If it is missing there is nothing to
+# measure, and the collector would quietly report 0.0 for ever — so fail loudly
+# here instead, where the log makes the reason obvious.
+if [ ! -r /proc/pressure/memory ]; then
+  echo "FATAL: /proc/pressure/memory is missing. This kernel has PSI disabled;" \
+       "boot with psi=1 or use a distro that enables it." >&2
+  exit 1
+fi
+echo "PSI available: $(cat /proc/pressure/memory)"
+
+%{ if swap_mb > 0 ~}
+# Give the kernel something to reclaim. Without swap a stress run on a small
+# instance goes straight to the OOM killer, which reads as one spike and a dead
+# process rather than the sustained reclaim PSI is meant to show.
+if [ ! -f /swapfile ]; then
+  fallocate -l ${swap_mb}M /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=${swap_mb}
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+%{ endif ~}
+
+git clone --depth 1 --branch '${repo_branch}' '${repo_url}' /opt/syshealth
+cd /opt/syshealth
+
+%{ if calibrate ~}
+# 60 seconds of idle, before any load, so each instance gets its own baseline.
+# The dashboard's 2x and 5x threshold lines are drawn from this.
+python3 syshealth.py calibrate
+%{ endif ~}
+
+cat > /etc/systemd/system/syshealth.service <<'UNIT'
+[Unit]
+Description=SysHealth memory pressure agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/syshealth
+Environment=SYSHEALTH_SERVER_URL=${dashboard_url}
+ExecStart=/usr/bin/python3 /opt/syshealth/syshealth.py
+Restart=always
+RestartSec=5
+
+# The agent is the thing watching the box, so it should outlive the load it is
+# asked to generate: let the OOM killer take stress first.
+OOMScoreAdjust=-500
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now syshealth
+
+sleep 8
+systemctl is-active --quiet syshealth \
+  && echo "=== agent running, reporting to ${dashboard_url} ===" \
+  || { echo "FATAL: agent failed to start"; journalctl -u syshealth -n 50 --no-pager; exit 1; }
