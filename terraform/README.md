@@ -20,11 +20,14 @@ there is no address to write down.
 aws configure                     # if you have not already
 cd terraform
 
+# -4 matters: many ISPs answer with an IPv6 address by default, and the
+# security group rules are IPv4.
 cat > terraform.tfvars <<EOF
 key_name = "my-keypair"
-ssh_cidr = "$(curl -s ifconfig.me)/32"
+ssh_cidr = "$(curl -4 -s ifconfig.me)/32"
 EOF
 
+cat terraform.tfvars              # sanity-check: dots, not colons
 terraform init
 terraform plan                    # read it: this creates five billable instances
 terraform apply
@@ -95,6 +98,22 @@ load test. It is not a record you can scroll back through after two days, and
 time-series store would be a separate change.
 
 ## Troubleshooting
+
+**`ssh_cidr must be an IPv4 CIDR`** — `curl ifconfig.me` gave you an IPv6
+address, and the `/32` went on the end of that. Instances in the default VPC get
+IPv4 addresses, so the rules have to be IPv4:
+
+```bash
+curl -4 -s ifconfig.me; echo      # four dotted numbers, no colons
+```
+
+If `-4` returns nothing your connection is IPv6-only, and reaching an IPv4-only
+instance needs a change beyond this config — enabling IPv6 on the VPC, subnet and
+instances, or connecting from somewhere with IPv4.
+
+Your address also changes when your network does, at which point the dashboard
+stops loading. Rewrite `terraform.tfvars` and `apply` again; only the security
+group rules change, and the instances are left alone.
 
 An instance that never appears:
 

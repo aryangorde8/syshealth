@@ -85,9 +85,11 @@ variables to set, one command to run:
 
 ```bash
 cd terraform
+
+# -4 matters: many ISPs answer with IPv6 by default, and the rules are IPv4.
 cat > terraform.tfvars <<EOF
 key_name = "your-keypair"
-ssh_cidr = "$(curl -s ifconfig.me)/32"
+ssh_cidr = "$(curl -4 -s ifconfig.me)/32"
 EOF
 
 terraform init && terraform apply

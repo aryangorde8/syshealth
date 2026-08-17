@@ -22,12 +22,40 @@ variable "key_name" {
 }
 
 variable "ssh_cidr" {
-  description = "Who may SSH in and open the dashboard, in CIDR form (e.g. \"203.0.113.4/32\"). Deliberately has no default — do not open this to the world by accident."
+  description = "Who may SSH in and open the dashboard, as an IPv4 CIDR (e.g. \"203.0.113.4/32\"). Deliberately has no default — do not open this to the world by accident."
   type        = string
 
   validation {
     condition     = var.ssh_cidr != "0.0.0.0/0"
     error_message = "Refusing 0.0.0.0/0. The dashboard exposes /run-stress with no authentication, so anyone reaching it could load your instances. Use your own address, e.g. \"203.0.113.4/32\"."
+  }
+
+  # Caught here because the provider's own complaint is three identical repeats
+  # of "must be a valid IPv4 CIDR", one per rule, with no hint as to why.
+  validation {
+    condition     = can(cidrnetmask(var.ssh_cidr))
+    error_message = <<-EOT
+      ssh_cidr must be an IPv4 CIDR, like "203.0.113.4/32".
+
+      If you built it from `curl ifconfig.me` and got an address full of colons,
+      that was your IPv6 address — many ISPs hand out IPv6 by default. Ask for
+      IPv4 explicitly:
+
+          curl -4 -s ifconfig.me
+
+      An IPv6 rule would not help here anyway: instances in the default VPC get
+      IPv4 addresses, so that is the family the rules have to match.
+    EOT
+  }
+
+  # A /24 must be named as x.x.x.0/24, not by some host inside it. Skipped when
+  # the value is not IPv4 at all, so that failure reports once, above.
+  validation {
+    condition = (
+      !can(cidrnetmask(var.ssh_cidr)) ||
+      cidrhost(var.ssh_cidr, 0) == split("/", var.ssh_cidr)[0]
+    )
+    error_message = "ssh_cidr must name the start of its block. For a single address use a /32, e.g. \"203.0.113.4/32\"; for a range, name the network address, e.g. \"203.0.113.0/24\"."
   }
 }
 
