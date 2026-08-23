@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import time
 
@@ -117,26 +118,38 @@ def series():
     return jsonify({"instances": payload})
 
 
+def _start_stress(agent_ip):
+    try:
+        r = requests.post(f"http://{agent_ip}:{AGENT_CONTROL_PORT}/stress", timeout=4)
+        return "started" if r.status_code == 200 else f"err {r.status_code}"
+    except Exception as e:
+        return f"unreachable: {e}"
+
+
 @app.route("/run-stress", methods=["POST"])
 def run_stress():
     now = time.time()
     results = {}
+    targets = {}
+
     for host, inst in instances.items():
         if (now - inst["last_seen"]) > ONLINE_WINDOW_SEC:
             results[host] = "offline"
-            continue
-        agent_ip = inst.get("agent_ip")
-        if not agent_ip:
+        elif not inst.get("agent_ip"):
             results[host] = "no ip"
-            continue
-        try:
-            r = requests.post(
-                f"http://{agent_ip}:{AGENT_CONTROL_PORT}/stress",
-                timeout=4
-            )
-            results[host] = "started" if r.status_code == 200 else f"err {r.status_code}"
-        except Exception as e:
-            results[host] = f"unreachable: {e}"
+        else:
+            targets[host] = inst["agent_ip"]
+
+    # In parallel, because the comparison is only meaningful if the sizes take
+    # the same load at the same moment. Sent one at a time, a single agent that
+    # has gone away burns the full timeout before the next is asked, staggering
+    # the runs by seconds and pulling the four curves apart for a reason that
+    # has nothing to do with instance size.
+    if targets:
+        with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+            started = {h: pool.submit(_start_stress, ip) for h, ip in targets.items()}
+        results.update({h: f.result() for h, f in started.items()})
+
     return jsonify(results)
 
 
