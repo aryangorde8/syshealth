@@ -36,7 +36,9 @@ Two usual reasons, in order of likelihood:
      security group rules change, the instances are left alone.
 
   2. The server is still installing. Give it two or three minutes from apply,
-     then:  \$(terraform output -raw dashboard_url) is up when this answers.
+     then run this again. If it stays silent past five, ask the box why:
+
+     ssh ubuntu@$(terraform output -json instances 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["dashboard"]["public_ip"])' 2>/dev/null) 'sudo tail -30 /var/log/syshealth-bootstrap.log'
      ssh ubuntu@$(terraform output -json instances 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["dashboard"]["public_ip"])' 2>/dev/null) 'sudo journalctl -u syshealth-server -n 50'
 EOF
   exit 1
