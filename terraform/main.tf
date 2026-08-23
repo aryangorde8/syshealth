@@ -33,6 +33,10 @@ locals {
     var.subnet_id != null ? [var.subnet_id] : data.aws_subnets.default.ids
   )
 
+  # Pinned if asked for, otherwise Canonical's latest. See variables.tf: this
+  # matters when a fleet is torn down and rebuilt expecting the same behaviour.
+  ami_id = var.ami_id != null ? var.ami_id : data.aws_ami.ubuntu.id
+
   common_tags = merge(var.tags, {
     Project   = "syshealth"
     ManagedBy = "terraform"
@@ -174,7 +178,7 @@ resource "aws_vpc_security_group_egress_rule" "agent_all" {
 # ---------------------------------------------------------------------------
 
 resource "aws_instance" "server" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = local.ami_id
   instance_type          = var.server_instance_type
   subnet_id              = local.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.server.id]
@@ -218,7 +222,7 @@ resource "aws_instance" "server" {
 resource "aws_instance" "agent" {
   for_each = local.instances
 
-  ami           = data.aws_ami.ubuntu.id
+  ami           = local.ami_id
   instance_type = each.value.type
 
   # One zone per size, cycling if there are fewer subnets than sizes. Cross-zone

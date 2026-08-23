@@ -3,6 +3,11 @@ output "dashboard_url" {
   value       = "http://${aws_instance.server.public_ip}:5000"
 }
 
+output "ami_id" {
+  description = "The image these instances were built from. Read it before a destroy you intend to rebuild identically, and set it as ami_id in terraform.tfvars."
+  value       = local.ami_id
+}
+
 output "instances" {
   description = "One entry per size, plus the dashboard."
   value = merge(

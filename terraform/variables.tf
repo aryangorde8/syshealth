@@ -94,6 +94,25 @@ variable "calibrate" {
   default     = true
 }
 
+variable "ami_id" {
+  description = <<-EOT
+    Pin the machine image instead of taking Canonical's newest. Leave null for
+    day-to-day use.
+
+    Set it when you intend to destroy the fleet and rebuild it later expecting
+    the same result — before a demo, say. The AMI lookup asks for most_recent,
+    which means "whatever Canonical published this morning": a fleet you
+    rehearsed on and a fleet you relaunch a week later are not built from the
+    same image, and the one difference you cannot debug under time pressure is
+    the one you did not know you had.
+
+    Read the current value out before you destroy:
+      terraform output ami_id
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "subnet_id" {
   description = <<-EOT
     Pin every instance to one subnet. Leave null to spread across the default
