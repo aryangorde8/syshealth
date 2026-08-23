@@ -106,9 +106,10 @@ EOF
 terraform init && terraform apply
 ```
 
-Everything installs and starts itself; open the `dashboard_url` output. See
-[`terraform/README.md`](terraform/README.md) for costs, design notes and
-`terraform destroy`.
+Everything installs and starts itself; open the `dashboard_url` output. Give it
+two to three minutes, and run `./check.sh` to see which sizes are reporting and
+which are not. See [`terraform/README.md`](terraform/README.md) for costs, design
+notes and `terraform destroy`.
 
 ---
 
@@ -257,6 +258,7 @@ syshealth/
 │   ├── css/dashboard.css
 │   └── js/dashboard.js   # Pressure graph, drawn as inline SVG — no libraries
 └── terraform/         # Dashboard + one instance per size, in one apply
+    └── check.sh       # Which sizes are reporting, and why one is not
 ```
 
 ---

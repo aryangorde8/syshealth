@@ -42,8 +42,17 @@ Then open the `dashboard_url` from the output. Two to three minutes for package
 install, a 60-second idle calibration per agent, and the first pushes. The
 **Instance** toggle appears once two agents report.
 
+To watch them arrive without refreshing the page, and to be told which sizes are
+still missing:
+
+```bash
+./check.sh
+```
+
 Press **Stress all** to load the fleet and watch the smaller sizes separate from
-the larger ones.
+the larger ones. The four are asked at the same moment, in parallel, because
+staggered starts would pull the curves apart for a reason that has nothing to do
+with instance size.
 
 ## Costs
 
@@ -144,12 +153,18 @@ aws ec2 run-instances --region <region> --instance-type t3.micro --count 1 \
   --query 'Instances[].InstanceId' --output text
 ```
 
-An instance that never appears:
+**An instance that never appears.** Start with `./check.sh`, which names the
+missing sizes. Then ask that box directly:
 
 ```bash
 ssh ubuntu@<public-ip> 'sudo tail -50 /var/log/syshealth-bootstrap.log'
 ssh ubuntu@<public-ip> 'sudo journalctl -u syshealth -n 50'
 ```
+
+An agent that is running but cannot reach the dashboard says so in its own
+journal — `push to http://... failed (1 in a row)`, repeated every five minutes
+until it recovers. Without that line the agent is not the problem; check that
+`syshealth-server` is up on the dashboard box.
 
 The dashboard itself:
 
