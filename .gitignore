@@ -1,3 +1,17 @@
 __pycache__
 *.log
-*.json
+node_modules/
+.venv/
+venv/
+
+# Written by `syshealth.py calibrate`, and specific to the machine that ran it.
+# Narrow rather than *.json, which would also swallow package.json.
+baseline.json
+# terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+terraform/*.tfvars.bak
+terraform/.relaunch.plan
+terraform/.terraform.lock.hcl
