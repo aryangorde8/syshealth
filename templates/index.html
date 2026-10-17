@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SysHealth &middot; Memory pressure</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232a78d6'/%3E%3Cpath d='M2.5 11L5 7.5l2.5 2.5L10 5l3.5 6' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+  <!-- Shown only when the server is dev.py, which serves /dev-mode. server.py
+       has no such route, so this stays hidden wherever real agents report. -->
+  <p class="demo-banner" id="demo-banner" role="status" hidden>
+    <strong>Demo data.</strong>
+    These pressure values are simulated by <code>dev.py</code> for local
+    preview. They are not measurements of any real machine.
+  </p>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">SysHealth</span>
+    </div>
+    <div class="topbar-right">
+      <p class="feed" id="feed-status" aria-live="polite">Connecting&hellip;</p>
+      <button type="button" class="test-chip" id="test-chip" hidden></button>
+      <button type="button" class="stress-btn" id="loadtest-toggle"
+              aria-expanded="false" aria-controls="loadtest-panel">&#9889; Load test</button>
+      <button type="button" class="ghost-btn" id="theme-toggle" aria-label="Switch colour theme">
+        <span id="theme-label">Auto</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- The load test form. Collapsed until asked for: most visits are to
+         look, not to load the fleet. -->
+    <section class="card loadtest" id="loadtest-panel" aria-labelledby="loadtest-heading" hidden>
+      <div class="card-head">
+        <div>
+          <h2 class="card-title" id="loadtest-heading">Load test</h2>
+          <p class="card-subtitle">
+            Make every reporting instance hold the memory your app needs, at the
+            same moment, and see which sizes cope.
+          </p>
+        </div>
+        <button type="button" class="ghost-btn" id="loadtest-close">Close</button>
+      </div>
+
+      <form class="lt-form" id="lt-form" novalidate>
+        <div class="lt-row">
+          <span class="filter-label" id="lt-mode-label">Test type</span>
+          <div class="segmented" id="lt-mode" role="radiogroup" aria-labelledby="lt-mode-label">
+            <button type="button" role="radio" data-mode="peak" aria-checked="true" class="is-selected">Peak load</button>
+            <button type="button" role="radio" data-mode="variable" aria-checked="false">Variable load</button>
+          </div>
+        </div>
+        <p class="lt-help" id="lt-mode-help"></p>
+
+        <div class="lt-fields" data-for="peak">
+          <label class="field">
+            <span class="field-label">Memory to hold</span>
+            <span class="input-unit"><input type="number" name="memory_mb" value="1600" min="1" max="16384" step="1" inputmode="numeric"><span>MB</span></span>
+            <span class="field-note">What your app uses at its busiest</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Hold it for</span>
+            <span class="input-unit"><input type="number" name="duration_sec" value="60" min="10" max="1800" step="1" inputmode="numeric"><span>seconds</span></span>
+            <span class="field-note">10 to 1800</span>
+          </label>
+        </div>
+
+        <div class="lt-fields" data-for="variable" hidden>
+          <div class="field field-wide">
+            <span class="field-label" id="lt-pattern-label">Pattern</span>
+            <div class="segmented" id="lt-pattern" role="radiogroup" aria-labelledby="lt-pattern-label">
+              <button type="button" role="radio" data-pattern="ramp" aria-checked="true" class="is-selected">Ramp up</button>
+              <button type="button" role="radio" data-pattern="wave" aria-checked="false">Up and down</button>
+              <button type="button" role="radio" data-pattern="bursts" aria-checked="false">Bursts</button>
+            </div>
+          </div>
+          <label class="field">
+            <span class="field-label">Your app at its busiest</span>
+            <span class="input-unit"><input type="number" name="need_mb" value="1600" min="1" max="16384" step="1" inputmode="numeric"><span>MB</span></span>
+            <span class="field-note">Each size is judged against this</span>
+          </label>
+          <label class="field">
+            <span class="field-label">From</span>
+            <span class="input-unit"><input type="number" name="low_mb" value="200" min="0" max="16384" step="1" inputmode="numeric"><span>MB</span></span>
+            <span class="field-note">Quiet-time memory, 0 for none</span>
+          </label>
+          <label class="field">
+            <span class="field-label">To</span>
+            <span class="input-unit"><input type="number" name="high_mb" value="3200" min="1" max="16384" step="1" inputmode="numeric"><span>MB</span></span>
+            <span class="field-note">Go past your app's busiest to see the room left</span>
+          </label>
+          <label class="field">
+            <span class="field-label" id="lt-steps-label">Steps</span>
+            <span class="input-unit"><input type="number" name="steps" value="6" min="2" max="20" step="1" inputmode="numeric"></span>
+            <span class="field-note" id="lt-steps-note">2 to 20</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Each step lasts</span>
+            <span class="input-unit"><input type="number" name="step_sec" value="60" min="10" max="1800" step="1" inputmode="numeric"><span>seconds</span></span>
+            <span class="field-note">60+ gives the clearest breaking point</span>
+          </label>
+        </div>
+
+        <div class="lt-fields">
+          <label class="field">
+            <span class="field-label">Parallel workers</span>
+            <span class="input-unit"><input type="number" name="workers" value="2" min="1" max="16" step="1" inputmode="numeric"></span>
+            <span class="field-note">The memory is split evenly between them</span>
+          </label>
+        </div>
+
+        <div class="lt-preview" aria-live="polite">
+          <p class="lt-summary" id="lt-summary"></p>
+          <div class="lt-plot" id="lt-plot">
+            <svg id="lt-chart" class="lt-chart" xmlns="http://www.w3.org/2000/svg" role="img"
+                 aria-label="Planned memory load over time"></svg>
+          </div>
+          <ul class="lt-fit" id="lt-fit"></ul>
+          <details class="lt-commands">
+            <summary>Commands each instance will run</summary>
+            <pre id="lt-commands"></pre>
+          </details>
+          <p class="lt-error" id="lt-error" role="alert" hidden></p>
+        </div>
+
+        <div class="lt-fields" id="lt-token-row" hidden>
+          <label class="field field-wide">
+            <span class="field-label">Server token</span>
+            <span class="input-unit"><input type="password" id="lt-token" autocomplete="off" spellcheck="false"></span>
+            <span class="field-note">This server only starts and stops tests for someone with its token
+              (<code>SYSHEALTH_TOKEN</code>; after Terraform, <code>terraform output -raw token</code>).
+              Kept in this browser only.</span>
+          </label>
+        </div>
+
+        <div class="lt-actions">
+          <button type="submit" class="primary-btn" id="lt-start">Start test</button>
+          <button type="button" class="ghost-btn" id="lt-stop" disabled>Stop test</button>
+          <p class="lt-status" id="lt-status" role="status"></p>
+        </div>
+      </form>
+
+      <div class="lt-results" id="lt-results" hidden>
+        <h3 class="lt-results-title" id="lt-results-title">Last test</h3>
+        <p class="card-subtitle" id="lt-results-summary"></p>
+
+        <!-- The question the test was run to answer. Worked out on the server
+             (rightsize.py), so GET /report gives the same answer. -->
+        <section class="rs" id="rs" aria-labelledby="rs-heading">
+          <div class="rs-head">
+            <h4 class="rs-title" id="rs-heading">Which size to choose</h4>
+            <div class="rs-inputs">
+              <label class="field">
+                <span class="field-label">Your app at its busiest</span>
+                <span class="input-unit"><input type="number" id="rs-need" min="1" max="16384" step="1" inputmode="numeric"><span>MB</span></span>
+              </label>
+              <label class="field">
+                <span class="field-label">Keep spare</span>
+                <span class="input-unit"><input type="number" id="rs-margin" value="25" min="0" max="200" step="1" inputmode="numeric"><span>%</span></span>
+              </label>
+              <label class="field" title="Optional. Half of one vCPU busy around the clock is 0.5. Prices in the CPU credits a burstable size would burn.">
+                <span class="field-label">Its average CPU</span>
+                <span class="input-unit"><input type="number" id="rs-cpu" min="0" max="192" step="0.05" inputmode="decimal" placeholder="optional"><span>vCPU</span></span>
+              </label>
+            </div>
+          </div>
+          <p class="rs-headline" id="rs-headline" aria-live="polite"></p>
+          <p class="rs-detail" id="rs-detail"></p>
+          <ul class="rs-lines" id="rs-lines"></ul>
+          <p class="rs-usage" id="rs-usage" hidden></p>
+        </section>
+
+        <figure class="rs-curve" id="rs-curve-wrap" hidden>
+          <figcaption class="rs-curve-head">
+            <span class="rs-curve-title">Pressure at each load level</span>
+            <span class="rs-curve-sub">Where each line crosses the degraded line is the most that size can hold.</span>
+          </figcaption>
+          <ul class="legend rs-legend" id="rs-legend"></ul>
+          <div class="rs-plot" id="rs-plot">
+            <svg id="rs-chart" class="rs-chart" xmlns="http://www.w3.org/2000/svg" role="img"
+                 aria-label="Memory pressure against the memory held, for each instance"></svg>
+          </div>
+        </figure>
+
+        <div class="table-scroll">
+          <table class="data-table">
+            <caption class="visually-hidden">How each instance coped with the last load test</caption>
+            <thead>
+              <tr>
+                <th scope="col">Instance</th>
+                <th scope="col">Outcome</th>
+                <th scope="col" class="num">Holds up to</th>
+                <th scope="col" class="num">Spare</th>
+                <th scope="col" class="num">Per month</th>
+                <th scope="col" class="num">Worst minute</th>
+                <th scope="col" class="num">Worst 10 s</th>
+                <th scope="col" class="num" data-variable>Critical from</th>
+              </tr>
+            </thead>
+            <tbody id="lt-results-body"></tbody>
+          </table>
+        </div>
+        <p class="lt-note">
+          <strong>Holds up to</strong> is the most memory the size held while
+          staying healthy, under the degraded line. Between two load levels it
+          is estimated from the pressure at each, and the estimate errs low.
+          <strong>Spare</strong> is how far that is above what your app needs.
+          With your app's average CPU, <strong>Per month</strong> adds the CPU
+          credits a burstable size would burn above its baseline; the test
+          itself loads memory, not CPU.
+          <strong>Worst minute</strong> is the highest one-minute average, the
+          number states are judged on; <strong>Worst 10&nbsp;s</strong> the
+          sharpest spike. Load levels use the average pressure while each was
+          held, skipping its first 10&nbsp;s while the reading settles.
+          <span id="rs-price-note"></span>
+        </p>
+      </div>
+    </section>
+
+    <!-- Current state. Not scoped by the range filter: this is always "now". -->
+    <section class="overview" aria-labelledby="overview-heading">
+      <h1 class="section-heading" id="overview-heading">Current state</h1>
+
+      <div class="overview-grid" id="overview-single">
+        <div class="hero">
+          <p class="hero-label">
+            Memory pressure &middot; <span id="hero-scope">&mdash;</span>
+            <span class="presence" id="hero-presence" data-online="false" hidden></span>
+          </p>
+          <p class="hero-figure"><span id="hero-psi">&mdash;</span><span class="hero-pct">%</span></p>
+          <p class="hero-unit">of the last minute, programs were waiting for memory</p>
+          <div class="band-scale" id="hero-scale"></div>
+          <p class="status-badge" id="status-badge" data-state="unknown">
+            <span class="status-icon" id="status-icon" aria-hidden="true"></span>
+            <span class="status-text" id="status-text">No data</span>
+          </p>
+          <p class="hero-meaning" id="hero-meaning">Waiting for the SysHealth agent to push its first sample.</p>
+          <p class="hero-action" id="hero-action"></p>
+          <p class="hero-reason" id="hero-reason"></p>
+        </div>
+
+        <div class="tiles" role="group" aria-label="Latest sample">
+          <div class="tile">
+            <p class="tile-label">Right now</p>
+            <p class="tile-value" id="tile-now">&mdash;</p>
+            <p class="tile-note">Waiting for memory, last 10&nbsp;s. Reacts fastest; the state uses the minute.</p>
+          </div>
+          <div class="tile">
+            <p class="tile-label">Whole machine stalled</p>
+            <p class="tile-value" id="tile-full">&mdash;</p>
+            <p class="tile-note" id="tile-full-note">Every program waiting at once, so no work at all got done.</p>
+          </div>
+          <div class="tile">
+            <p class="tile-label">Load test</p>
+            <p class="tile-value" id="tile-test">&mdash;</p>
+            <p class="tile-note" id="tile-test-note">No test running</p>
+          </div>
+          <div class="tile" id="tile-app-box" hidden>
+            <p class="tile-label">Your app &middot; <span id="tile-app-name"></span></p>
+            <p class="tile-value" id="tile-app">&mdash;</p>
+            <p class="tile-note" id="tile-app-note"></p>
+          </div>
+          <div class="tile">
+            <p class="tile-label">Memory scanned</p>
+            <p class="tile-value" id="tile-scan">&mdash;</p>
+            <p class="tile-note">Pages the kernel searched to free memory, last 5&nbsp;s. A clue to why, not a measure of harm.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Why: where the RAM is, who holds it, and the likely cause of any
+           pressure (diagnose.py, on the agent). One machine at a time. -->
+      <section class="card why" id="why" aria-labelledby="why-heading" hidden>
+        <div class="why-grid">
+          <div class="why-memory">
+            <h2 class="why-title" id="why-heading">Where the memory is</h2>
+            <div class="mem-bar" id="mem-bar" role="img"></div>
+            <ul class="mem-legend" id="mem-legend"></ul>
+            <p class="why-usage" id="why-usage"></p>
+            <p class="why-usage" id="why-other" hidden></p>
+          </div>
+          <div class="why-top">
+            <h3 class="why-title">Holding the most</h3>
+            <ol class="top-list" id="top-list"></ol>
+          </div>
+        </div>
+        <p class="why-callout" id="why-app" data-kind="cause" hidden></p>
+        <p class="why-callout" id="why-cause" data-kind="cause" hidden></p>
+        <p class="why-callout" id="why-leak" data-kind="leak" hidden></p>
+      </section>
+
+      <!-- Comparing instances there is no single headline number, so the
+           hero gives way to one tile per machine. -->
+      <div class="compare-grid" id="overview-compare" hidden
+           role="group" aria-label="Latest sample per instance"></div>
+
+      <details class="scale-guide">
+        <summary>What the number means</summary>
+        <div class="scale-guide-body">
+          <p>
+            The number is the share of time programs on the machine were held up
+            waiting for memory. The Linux kernel measures it directly
+            (<abbr title="Pressure Stall Information">PSI</abbr>). It is not how
+            full memory is. A machine can be 90% full and fine. What matters is
+            whether programs have to wait. 20% means that out of every 10 seconds,
+            2 were lost waiting, so the work could have run about 20% faster with
+            enough memory.
+          </p>
+          <ul class="scale-guide-list" id="scale-guide-list"></ul>
+          <p class="scale-guide-foot">
+            A state changes only after it has held for 15 seconds, so one spike is
+            not reported as a failure. The thresholds come from systems that act on
+            this measurement in production: Android&rsquo;s low-memory killer,
+            systemd-oomd and Meta&rsquo;s oomd. Sources are in
+            <code>docs/thresholds.md</code>.
+          </p>
+        </div>
+      </details>
+    </section>
+
+    <!-- One filter row, above everything it scopes. -->
+    <div class="filterbar">
+      <div class="filter-group" role="group" aria-label="Time range">
+        <span class="filter-label" id="range-label">Range</span>
+        <div class="segmented" id="range-control" role="radiogroup" aria-labelledby="range-label">
+          <button type="button" role="radio" data-minutes="5" aria-checked="false">5m</button>
+          <button type="button" role="radio" data-minutes="15" aria-checked="true" class="is-selected">15m</button>
+          <button type="button" role="radio" data-minutes="60" aria-checked="false">1h</button>
+          <button type="button" role="radio" data-minutes="0" aria-checked="false">All</button>
+        </div>
+      </div>
+
+      <div class="filter-group" id="instance-filter" role="group" aria-label="Instance" hidden>
+        <span class="filter-label" id="instance-label">Instance</span>
+        <div class="segmented segmented-keyed" id="instance-control"
+             role="radiogroup" aria-labelledby="instance-label"></div>
+      </div>
+
+      <div class="filter-group filter-group-end" role="group" aria-label="View">
+        <div class="segmented" id="view-control" role="radiogroup" aria-label="View">
+          <button type="button" role="radio" data-view="chart" aria-checked="true" class="is-selected">Chart</button>
+          <button type="button" role="radio" data-view="table" aria-checked="false">Table</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="scoped" id="scoped">
+      <figure class="card chart-card" id="chart-card">
+        <figcaption class="card-head">
+          <div>
+            <h2 class="card-title" id="card-title">Memory pressure over time</h2>
+            <p class="card-subtitle" id="chart-subtitle">Share of time programs waited for memory.</p>
+          </div>
+          <ul class="legend" id="legend"></ul>
+        </figcaption>
+
+        <div class="plot-wrap" id="plot-wrap">
+          <svg id="chart" class="chart" xmlns="http://www.w3.org/2000/svg"
+               role="img" tabindex="0"
+               aria-label="Line chart of memory pressure over time. Use the left and right arrow keys to read individual samples, or switch to the table view."></svg>
+          <div class="tooltip" id="tooltip" hidden></div>
+          <p class="empty-state" id="empty-state">
+            No agents reporting yet. Run <code>python3 syshealth.py</code> on each instance,
+            with <code>SYSHEALTH_SERVER_URL</code> pointing at this server.
+          </p>
+        </div>
+        <p class="visually-hidden" id="chart-readout" aria-live="polite"></p>
+      </figure>
+
+      <div class="card table-card" id="table-card" hidden>
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Samples</h2>
+            <p class="card-subtitle">The same data as the chart, newest first.</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <caption class="visually-hidden">Memory pressure samples in the selected range</caption>
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col" id="table-instance-head" hidden>Instance</th>
+                <th scope="col" class="num">Now (10&nbsp;s)</th>
+                <th scope="col" class="num">Last minute</th>
+                <th scope="col" class="num">Whole machine</th>
+                <th scope="col" class="num">In use</th>
+                <th scope="col">State</th>
+                <th scope="col" class="num">Test load</th>
+                <th scope="col" class="num">Scanned &Delta;</th>
+                <th scope="col">Reason</th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
